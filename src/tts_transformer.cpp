@@ -3157,6 +3157,11 @@ bool TTSTransformer::generate(const int32_t * text_tokens, int32_t n_tokens,
                 logits[i] = -INFINITY;
             }
         }
+        // Python min_new_tokens=2 (UANF fork): no EOS on the first two frames, so a line can
+        // never come out empty.
+        if (frame < 2) {
+            logits[cfg.codec_eos_id] = -INFINITY;
+        }
 
         // Repetition penalty (HuggingFace style) on previously generated CB0 tokens
         if (repetition_penalty != 1.0f) {
@@ -3503,6 +3508,11 @@ bool TTSTransformer::generate_icl(const int32_t * text_tokens, int32_t n_tokens,
             if (i != cfg.codec_eos_id) {
                 logits[i] = -INFINITY;
             }
+        }
+        // Python min_new_tokens=2 (UANF fork): no EOS on the first two frames, so a line can
+        // never come out empty.
+        if (frame < 2) {
+            logits[cfg.codec_eos_id] = -INFINITY;
         }
 
         // Repetition penalty (full history, same as x-vector)
