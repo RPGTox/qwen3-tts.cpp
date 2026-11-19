@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.21)  # PROJECT_IS_TOP_LEVEL
 project(qwen3-tts-ggml VERSION 0.1.0 LANGUAGES CXX)
 
 # C++ standard
@@ -8,10 +8,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Static libs are linked into the qwen3tts shared lib (C API), so they must be PIC
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+if(PROJECT_IS_TOP_LEVEL)
+    set(PROJECT_IS_TOP_LEVEL_NOT OFF)
+else()
+    set(PROJECT_IS_TOP_LEVEL_NOT ON)
+endif()
+
+# Embedding (UANF fork): when used with add_subdirectory(), build the vendored GGML in the
+# parent's tree, skip the CLI / tests / install, and do not tune for the build machine's CPU
+# (binaries are shipped to other PCs).
+option(QWEN3_TTS_BUILD_TOOLS "Build the CLI, the shared C library, the tests and install rules" ${PROJECT_IS_TOP_LEVEL})
+option(QWEN3_TTS_NATIVE "Compile with -march=native (only for local builds)" ${PROJECT_IS_TOP_LEVEL})
+option(QWEN3_TTS_GGML_FROM_SOURCE "Build ./ggml with add_subdirectory instead of using ./ggml/build" ${PROJECT_IS_TOP_LEVEL_NOT})
+
 # Compiler flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native")
+    if(QWEN3_TTS_NATIVE)
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native")
+    else()
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+    endif()
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 endif()
 
@@ -37,6 +54,11 @@ find_package(Threads REQUIRED)
 # GGML library paths
 set(GGML_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ggml")
 set(GGML_BUILD_DIR "${GGML_DIR}/build")
+if(QWEN3_TTS_GGML_FROM_SOURCE AND NOT TARGET ggml)
+    # Targets ggml / ggml-base / ggml-cpu (and ggml-vulkan with GGML_VULKAN=ON) come from here;
+    # the link names below then resolve to these targets.
+    add_subdirectory(${GGML_DIR} ${CMAKE_CURRENT_BINARY_DIR}/ggml EXCLUDE_FROM_ALL)
+endif()
 
 # Detect Metal backend availability
 if(APPLE AND EXISTS "${GGML_BUILD_DIR}/src/ggml-metal/libggml-metal.dylib")
@@ -190,6 +212,7 @@ if(WIN32)
     target_link_libraries(qwen3_tts PUBLIC psapi)
 endif()
 
+if(QWEN3_TTS_BUILD_TOOLS)
 # Shared library with C API (for Nim FFI)
 add_library(qwen3tts_shared SHARED
     src/qwen3tts_c_api.cpp
@@ -294,3 +317,4 @@ add_test(NAME decoder_test
     COMMAND test_decoder
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+endif() # QWEN3_TTS_BUILD_TOOLS
