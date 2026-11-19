@@ -87,6 +87,11 @@ bool load_tensor_data_from_file(
 
 // Helper to initialize backend with GPU preference and CPU fallback
 ggml_backend_t init_preferred_backend(const char * component_name, std::string * error_msg);
+
+// Sets the thread count of a backend that supports it (CPU), through the backend registry
+// (UANF fork): works with GGML backends linked statically and loaded as DLLs (GGML_BACKEND_DL),
+// unlike ggml_backend_cpu_set_n_threads. No-op for other backends or n_threads <= 0.
+void backend_set_n_threads(ggml_backend_t backend, int n_threads);
 void release_preferred_backend(ggml_backend_t backend);
 
 // Helper function to free model resources

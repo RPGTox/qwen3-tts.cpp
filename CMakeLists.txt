@@ -84,7 +84,7 @@ target_link_directories(text_tokenizer PUBLIC
 target_link_libraries(text_tokenizer PUBLIC
     ggml
     ggml-base
-    ggml-cpu
+    $<$<TARGET_EXISTS:ggml-cpu>:ggml-cpu>
     Threads::Threads
 )
 if(GGML_HAS_METAL)
@@ -117,7 +117,7 @@ target_link_directories(tts_transformer PUBLIC
 target_link_libraries(tts_transformer PUBLIC
     ggml
     ggml-base
-    ggml-cpu
+    $<$<TARGET_EXISTS:ggml-cpu>:ggml-cpu>
     Threads::Threads
 )
 if(GGML_HAS_METAL)
@@ -146,7 +146,7 @@ target_link_directories(audio_tokenizer_encoder PUBLIC
 target_link_libraries(audio_tokenizer_encoder PUBLIC
     ggml
     ggml-base
-    ggml-cpu
+    $<$<TARGET_EXISTS:ggml-cpu>:ggml-cpu>
     Threads::Threads
 )
 if(GGML_HAS_METAL)
@@ -185,7 +185,7 @@ target_link_directories(audio_tokenizer_decoder PUBLIC
 target_link_libraries(audio_tokenizer_decoder PUBLIC
     ggml
     ggml-base
-    ggml-cpu
+    $<$<TARGET_EXISTS:ggml-cpu>:ggml-cpu>
     Threads::Threads
 )
 if(GGML_HAS_METAL)

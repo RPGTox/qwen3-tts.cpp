@@ -169,6 +169,21 @@ GGUFLoader::~GGUFLoader() {
     close();
 }
 
+void backend_set_n_threads(ggml_backend_t backend, int n_threads) {
+    if (!backend || n_threads <= 0) {
+        return;
+    }
+    ggml_backend_dev_t dev = ggml_backend_get_device(backend);
+    ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
+    if (!reg) {
+        return;
+    }
+    auto fn = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
+    if (fn) {
+        fn(backend, n_threads);
+    }
+}
+
 ggml_backend_t init_preferred_backend(const char * component_name, std::string * error_msg) {
     if (error_msg) error_msg->clear();
 

@@ -1102,15 +1102,9 @@ void AudioTokenizerDecoder::set_n_threads(int32_t n_threads) {
         return;
     }
     n_threads_ = n_threads;
-    if (state_.backend_cpu) {
-        ggml_backend_cpu_set_n_threads(state_.backend_cpu, n_threads);
-    }
-    if (state_.backend) {
-        ggml_backend_dev_t device = ggml_backend_get_device(state_.backend);
-        if (device && ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_CPU) {
-            ggml_backend_cpu_set_n_threads(state_.backend, n_threads);
-        }
-    }
+    // Registry-based (works with dynamically loaded backends); no-op for GPU backends.
+    backend_set_n_threads(state_.backend_cpu, n_threads);
+    backend_set_n_threads(state_.backend, n_threads);
 }
 
 void free_audio_decoder_model(audio_decoder_model & model) {
