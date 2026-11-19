@@ -212,6 +212,17 @@ if(WIN32)
     target_link_libraries(qwen3_tts PUBLIC psapi)
 endif()
 
+# Static library with the C API, for embedding (UANF fork): include qwen3tts_c_api.h.
+add_library(qwen3tts_c STATIC
+    src/qwen3tts_c_api.cpp
+)
+target_include_directories(qwen3tts_c PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(qwen3tts_c PUBLIC
+    qwen3_tts
+)
+
 if(QWEN3_TTS_BUILD_TOOLS)
 # Shared library with C API (for Nim FFI)
 add_library(qwen3tts_shared SHARED

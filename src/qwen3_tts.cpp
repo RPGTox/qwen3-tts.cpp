@@ -117,15 +117,8 @@ Qwen3TTS::Qwen3TTS() = default;
 Qwen3TTS::~Qwen3TTS() = default;
 
 bool Qwen3TTS::load_models(const std::string & model_dir) {
-    int64_t t_start = get_time_ms();
-    log_memory_usage("load/start");
-
-    transformer_.unload_model();
-    audio_decoder_.unload_model();
-    transformer_loaded_ = false;
-    decoder_loaded_ = false;
-    
-    // Construct model paths — prefer quantized (q8_0) over full-precision (f16)
+    // Upstream file names (0.6B Base) — prefer quantized (q8_0) over full-precision (f16).
+    // Other models (1.7B Base, 1.7B VoiceDesign) are loaded by path with load_model_files().
     std::string tts_model_path;
     std::string q8_path = model_dir + "/qwen3-tts-0.6b-q8_0.gguf";
     std::string f16_path = model_dir + "/qwen3-tts-0.6b-f16.gguf";
@@ -136,14 +129,29 @@ bool Qwen3TTS::load_models(const std::string & model_dir) {
     } else {
         tts_model_path = f16_path;
     }
-    std::string tokenizer_model_path = model_dir + "/qwen3-tts-tokenizer-f16.gguf";
+    return load_model_files(tts_model_path, model_dir + "/qwen3-tts-tokenizer-f16.gguf");
+}
+
+bool Qwen3TTS::load_model_files(const std::string & tts_model_path,
+                                const std::string & tokenizer_model_path) {
+    int64_t t_start = get_time_ms();
+    log_memory_usage("load/start");
+
+    transformer_.unload_model();
+    audio_decoder_.unload_model();
+    transformer_loaded_ = false;
+    decoder_loaded_ = false;
+
     tts_model_path_ = tts_model_path;
     decoder_model_path_ = tokenizer_model_path;
-    // The codec encoder prefers an F32 tokenizer GGUF when the model dir
+    // The codec encoder prefers an F32 tokenizer GGUF when the tokenizer's folder
     // has one (exact Python parity — the decoder itself must keep the F16
     // GGUF: its conv_1d/im2col requires F16 weights).
     codec_encoder_model_path_ = tokenizer_model_path;
     {
+        const size_t slash = tokenizer_model_path.find_last_of("/\\");
+        const std::string model_dir =
+            slash == std::string::npos ? std::string(".") : tokenizer_model_path.substr(0, slash);
         std::string f32_tok_path = model_dir + "/qwen3-tts-tokenizer-f32.gguf";
         FILE * f32_check = fopen(f32_tok_path.c_str(), "r");
         if (f32_check) {
@@ -446,6 +454,14 @@ tts_result Qwen3TTS::synthesize_with_embedding(const std::string & text,
 
     if (embedding == nullptr || embedding_size <= 0) {
         result.error_msg = "Invalid speaker embedding";
+        return result;
+    }
+    // UANF fork: the embedding must match the talker width (1024 for 0.6B, 2048 for 1.7B).
+    // A cached 0.6B embedding passed to a 1.7B model would make the prefill read past it.
+    const int32_t expected = transformer_.get_config().hidden_size;
+    if (embedding_size != expected) {
+        result.error_msg = "Speaker embedding size " + std::to_string(embedding_size) +
+                           " does not match the model (" + std::to_string(expected) + ")";
         return result;
     }
 

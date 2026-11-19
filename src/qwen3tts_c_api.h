@@ -145,6 +145,33 @@ Qwen3TtsAudio* qwen3_tts_synthesize_in_context_streaming(
     qwen3_tts_stream_callback callback,
     void* user_data);
 
+
+/* ---- UANF fork additions ------------------------------------------------- */
+
+/* Create an engine from explicit model files: any Qwen3-TTS GGUF (0.6B / 1.7B
+ * Base, 1.7B VoiceDesign) and the shared speech tokenizer GGUF
+ * (qwen3-tts-tokenizer-f16.gguf). Returns NULL on failure; the reason is then
+ * available from qwen3_tts_create_error(). */
+Qwen3Tts* qwen3_tts_create_from_files(const char* tts_model_path,
+                                      const char* tokenizer_path);
+
+/* Reason of the last failed qwen3_tts_create / _create_from_files on this
+ * thread (empty string if none). */
+const char* qwen3_tts_create_error(void);
+
+/* Talker width of the loaded model (1024 for 0.6B, 2048 for 1.7B): the size a
+ * speaker embedding must have for this model. 0 if not loaded. */
+int32_t qwen3_tts_hidden_size(const Qwen3Tts* tts);
+
+/* Voice design: speech in a brand new voice described in natural language
+ * (e.g. "an old man with a deep, gravelly voice, speaking slowly"), with no
+ * reference audio. Requires a VoiceDesign model (1.7B VoiceDesign).
+ * Returns NULL on failure (qwen3_tts_get_error). Free with qwen3_tts_free_audio(). */
+Qwen3TtsAudio* qwen3_tts_design(Qwen3Tts* tts,
+                                const char* description,
+                                const char* text,
+                                const Qwen3TtsParams* params);
+
 #ifdef __cplusplus
 }
 #endif

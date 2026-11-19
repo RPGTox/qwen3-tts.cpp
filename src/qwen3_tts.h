@@ -100,6 +100,14 @@ public:
     // Load all models from directory
     // model_dir should contain: transformer.gguf, tokenizer.gguf, vocoder.gguf
     bool load_models(const std::string & model_dir);
+
+    // Load explicit model files (UANF fork): any Qwen3-TTS GGUF (0.6B / 1.7B Base,
+    // 1.7B VoiceDesign) and the shared speech tokenizer GGUF.
+    bool load_model_files(const std::string & tts_model_path,
+                          const std::string & tokenizer_model_path);
+
+    // Talker width of the loaded model (speaker embeddings must have this size).
+    int32_t hidden_size() const { return transformer_.get_config().hidden_size; }
     
     // Generate speech from text
     // text: input text to synthesize

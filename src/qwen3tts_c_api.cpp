@@ -47,6 +47,9 @@ struct Qwen3TtsAudio {
     int32_t sample_rate;
 };
 
+// Reason of the last failed create on this thread (the handle is deleted then).
+static thread_local std::string g_create_error;
+
 // Opaque handle — backs the C typedef
 struct Qwen3Tts {
     qwen3_tts::Qwen3TTS engine;
@@ -109,10 +112,51 @@ Qwen3Tts * qwen3_tts_create(const char * model_dir, int32_t n_threads) {
     (void)n_threads; // thread count is set per-call via params
     if (!tts->engine.load_models(model_dir)) {
         tts->last_error = tts->engine.get_error();
+        g_create_error = tts->last_error;
         delete tts;
         return nullptr;
     }
+    g_create_error.clear();
     return tts;
+}
+
+Qwen3Tts * qwen3_tts_create_from_files(const char * tts_model_path,
+                                       const char * tokenizer_path) {
+    if (!tts_model_path || !tokenizer_path) {
+        g_create_error = "model paths missing";
+        return nullptr;
+    }
+    auto * tts = new Qwen3Tts;
+    if (!tts->engine.load_model_files(tts_model_path, tokenizer_path)) {
+        g_create_error = tts->engine.get_error();
+        delete tts;
+        return nullptr;
+    }
+    g_create_error.clear();
+    return tts;
+}
+
+const char * qwen3_tts_create_error(void) {
+    return g_create_error.c_str();
+}
+
+int32_t qwen3_tts_hidden_size(const Qwen3Tts * tts) {
+    if (!tts || !tts->engine.is_loaded()) return 0;
+    return tts->engine.hidden_size();
+}
+
+Qwen3TtsAudio * qwen3_tts_design(Qwen3Tts * tts, const char * description,
+                                 const char * text, const Qwen3TtsParams * params) {
+    if (!tts || !description || !text) return nullptr;
+    AUTORELEASE_BEGIN
+    auto cpp_params = to_cpp_params(params);
+    auto result = tts->engine.synthesize_voice_design(text, description, cpp_params);
+    if (!result.success) {
+        tts->last_error = result.error_msg;
+    }
+    auto * out = to_c_audio(result);
+    AUTORELEASE_END
+    return out;
 }
 
 int qwen3_tts_is_loaded(const Qwen3Tts * tts) {
