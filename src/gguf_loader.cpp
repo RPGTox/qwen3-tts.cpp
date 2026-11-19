@@ -139,6 +139,24 @@ ggml_backend_t init_tensor_loader_backend(enum ggml_backend_dev_type preferred_b
 
     ggml_backend_t backend = ggml_backend_init_by_type(preferred_backend_type, nullptr);
     if (!backend && preferred_backend_type != GGML_BACKEND_DEVICE_TYPE_CPU) {
+        // UANF fork: the preferred type may not exist (e.g. IGPU on a PC with only a discrete
+        // GPU). Try the other accelerators before the CPU, in init_preferred_backend's order;
+        // otherwise the weights land in host memory and every op of the component silently
+        // runs on the CPU even though its compute backend is the GPU.
+        const enum ggml_backend_dev_type order[] = {
+            GGML_BACKEND_DEVICE_TYPE_IGPU, GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_ACCEL,
+        };
+        for (enum ggml_backend_dev_type type : order) {
+            if (type == preferred_backend_type) {
+                continue;
+            }
+            backend = ggml_backend_init_by_type(type, nullptr);
+            if (backend) {
+                break;
+            }
+        }
+    }
+    if (!backend) {
         backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
     }
     return backend;

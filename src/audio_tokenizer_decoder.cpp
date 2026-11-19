@@ -6,8 +6,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 #include <limits>
+#include <map>
 #include <numeric>
+#include <string>
+#include <vector>
 
 #define QWEN3_TTS_DEC_MAX_NODES 32768
 
@@ -33,6 +37,51 @@ static int32_t get_env_i32(const char * key, int32_t default_value) {
     }
 
     return (int32_t) parsed;
+}
+
+// Per-node vocoder profiler (QWEN3_TTS_PROFILE_DECODER=1). The scheduler synchronizes before
+// each eval callback, so the time between two callbacks is the node's compute time on any
+// backend. Results are aggregated by op and printed after the decode. Slows decoding down.
+struct decoder_profile {
+    struct entry { double ms = 0; int count = 0; };
+    std::map<std::string, entry> by_op;
+    std::chrono::steady_clock::time_point last;
+    double total_ms = 0;
+    ggml_backend_sched_t sched = nullptr;
+};
+
+static bool decoder_profile_cb(struct ggml_tensor * t, bool ask, void * user_data) {
+    auto * p = static_cast<decoder_profile *>(user_data);
+    if (ask) {
+        return true;  // observe every node
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(now - p->last).count();
+    p->last = now;
+    char key[200];
+    ggml_backend_t be = p->sched ? ggml_backend_sched_get_tensor_backend(p->sched, t) : nullptr;
+    const char * be_name = be ? ggml_backend_name(be) : "?";
+    if (t->src[0]) {
+        snprintf(key, sizeof(key), "%-8s %-18s src0 %s [%lld,%lld,%lld]", be_name, ggml_op_desc(t), ggml_type_name(t->src[0]->type),
+                 (long long) t->src[0]->ne[0], (long long) t->src[0]->ne[1], (long long) t->src[0]->ne[2]);
+    } else {
+        snprintf(key, sizeof(key), "%-8s %-18s", be_name, ggml_op_desc(t));
+    }
+    auto & e = p->by_op[key];
+    e.ms += ms;
+    e.count++;
+    p->total_ms += ms;
+    return true;
+}
+
+static void decoder_profile_print(const decoder_profile & p) {
+    std::vector<std::pair<std::string, decoder_profile::entry>> rows(p.by_op.begin(), p.by_op.end());
+    std::sort(rows.begin(), rows.end(), [](const auto & a, const auto & b) { return a.second.ms > b.second.ms; });
+    fprintf(stderr, "  [decoder profile] total %.1f ms over %zu op kinds\n", p.total_ms, rows.size());
+    for (size_t i = 0; i < rows.size() && i < 20; ++i) {
+        fprintf(stderr, "  %8.1f ms %5.1f%% x%-4d %s\n", rows[i].second.ms, 100.0 * rows[i].second.ms / p.total_ms,
+                rows[i].second.count, rows[i].first.c_str());
+    }
 }
 
 AudioTokenizerDecoder::AudioTokenizerDecoder() = default;
@@ -64,29 +113,33 @@ void AudioTokenizerDecoder::unload_model() {
 void AudioTokenizerDecoder::normalize_codebooks() {
     const float epsilon = 1e-5f;
     
+    // UANF fork: works for weights in any backend buffer (host or GPU): read with
+    // ggml_backend_tensor_get, normalize on the host, write back with ggml_backend_tensor_set.
+    // (Upstream wrote through codebook->data, which is only valid for host buffers.)
     auto normalize_codebook = [epsilon](struct ggml_tensor * codebook, struct ggml_tensor * usage, const char *) {
-        if (!codebook || !usage || !codebook->data || !usage->data) return;
-        
-        int64_t codebook_dim = codebook->ne[0];
-        int64_t codebook_size = codebook->ne[1];
-        
-        ggml_fp16_t * cb_data = (ggml_fp16_t *)codebook->data;
-        float * usage_data = (float *)usage->data;
-        
+        if (!codebook || !usage || !codebook->buffer || !usage->buffer) return;
+        if (codebook->type != GGML_TYPE_F16 || usage->type != GGML_TYPE_F32) return;
+
+        const int64_t codebook_dim = codebook->ne[0];
+        const int64_t codebook_size = codebook->ne[1];
+
+        std::vector<ggml_fp16_t> cb_data(ggml_nelements(codebook));
+        std::vector<float> usage_data(ggml_nelements(usage));
+        ggml_backend_tensor_get(codebook, cb_data.data(), 0, ggml_nbytes(codebook));
+        ggml_backend_tensor_get(usage, usage_data.data(), 0, ggml_nbytes(usage));
+
         for (int64_t emb_idx = 0; emb_idx < codebook_size; ++emb_idx) {
             float u = usage_data[emb_idx];
             if (u < epsilon) u = epsilon;
-            float inv_u = 1.0f / u;
-            
+            const float inv_u = 1.0f / u;
             for (int64_t dim_idx = 0; dim_idx < codebook_dim; ++dim_idx) {
-                int64_t mem_idx = dim_idx + emb_idx * codebook_dim;
-                float val = ggml_fp16_to_fp32(cb_data[mem_idx]);
-                cb_data[mem_idx] = ggml_fp32_to_fp16(val * inv_u);
+                const int64_t mem_idx = dim_idx + emb_idx * codebook_dim;
+                cb_data[mem_idx] = ggml_fp32_to_fp16(ggml_fp16_to_fp32(cb_data[mem_idx]) * inv_u);
             }
         }
-        
+        ggml_backend_tensor_set(codebook, cb_data.data(), 0, ggml_nbytes(codebook));
     };
-    
+
     normalize_codebook(model_.vq_first_codebook, model_.vq_first_usage, "first");
     
     for (int i = 0; i < 15; ++i) {
@@ -351,17 +404,7 @@ bool AudioTokenizerDecoder::load_model(const std::string & model_path) {
         model_.dec_blocks[i].res[2].dilation = 9;
     }
     
-    normalize_codebooks();
-    // Codebooks are normalized in host memory; sync once to backend tensors.
-    auto upload_if_present = [](struct ggml_tensor * t) {
-        if (t && t->data) {
-            ggml_backend_tensor_set(t, t->data, 0, ggml_nbytes(t));
-        }
-    };
-    upload_if_present(model_.vq_first_codebook);
-    for (int i = 0; i < 15; ++i) {
-        upload_if_present(model_.vq_rest_codebook[i]);
-    }
+    normalize_codebooks();  // reads and writes the backend tensors directly
     
     state_.backend = init_preferred_backend("AudioTokenizerDecoder", &error_msg_);
     if (!state_.backend) {
@@ -910,12 +953,24 @@ bool AudioTokenizerDecoder::decode_single(const int32_t * codes, int32_t n_frame
     
 
     
-    if (ggml_backend_sched_graph_compute(state_.sched, gf) != GGML_STATUS_SUCCESS) {
+    const bool profile = get_env_i32("QWEN3_TTS_PROFILE_DECODER", 0) != 0;
+    decoder_profile prof;
+    if (profile) {
+        ggml_backend_sched_set_eval_callback(state_.sched, decoder_profile_cb, &prof);
+        prof.last = std::chrono::steady_clock::now();
+        prof.sched = state_.sched;
+    }
+    const ggml_status status = ggml_backend_sched_graph_compute(state_.sched, gf);
+    if (profile) {
+        ggml_backend_sched_set_eval_callback(state_.sched, nullptr, nullptr);
+        decoder_profile_print(prof);
+    }
+    if (status != GGML_STATUS_SUCCESS) {
         error_msg_ = "Failed to compute graph";
         ggml_backend_sched_reset(state_.sched);
         return false;
     }
-    
+
     struct ggml_tensor * audio_tensor = ggml_graph_get_tensor(gf, "audio");
     if (!audio_tensor) {
         error_msg_ = "Failed to find audio tensor";
