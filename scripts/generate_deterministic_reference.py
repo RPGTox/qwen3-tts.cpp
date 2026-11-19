@@ -227,7 +227,25 @@ def _build_prefill_embeddings(
     }
 
 
+def _parse_args() -> None:
+    """Optional overrides of the module constants (UANF fork); defaults keep upstream behaviour."""
+    import argparse
+
+    global MODEL_PATH, REF_AUDIO_PATH, REF_TEXT_PATH, OUTPUT_DIR, SYNTH_TEXT, LANGUAGE
+    parser = argparse.ArgumentParser(description="Generate deterministic Qwen3-TTS reference artifacts")
+    parser.add_argument("--model", type=Path, default=MODEL_PATH, help="HF model directory")
+    parser.add_argument("--ref-audio", type=Path, default=REF_AUDIO_PATH, help="reference clip (voice clone)")
+    parser.add_argument("--ref-text", type=Path, default=REF_TEXT_PATH, help="transcript of the reference clip")
+    parser.add_argument("--output", type=Path, default=OUTPUT_DIR, help="output directory")
+    parser.add_argument("--text", default=SYNTH_TEXT, help="text to synthesize")
+    parser.add_argument("--language", default=LANGUAGE)
+    args = parser.parse_args()
+    MODEL_PATH, REF_AUDIO_PATH, REF_TEXT_PATH = args.model, args.ref_audio, args.ref_text
+    OUTPUT_DIR, SYNTH_TEXT, LANGUAGE = args.output, args.text, args.language
+
+
 def main() -> int:
+    _parse_args()
     torch.manual_seed(0)
     np.random.seed(0)
     random.seed(0)

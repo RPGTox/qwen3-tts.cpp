@@ -433,6 +433,7 @@ bool AudioTokenizerDecoder::load_model(const std::string & model_path) {
         error_msg_ = "Failed to create backend scheduler";
         return false;
     }
+    set_n_threads(n_threads_);  // thread count requested before a (lazy) load
 
     state_.compute_meta.resize(ggml_tensor_overhead() * QWEN3_TTS_DEC_MAX_NODES + ggml_graph_overhead());
     
@@ -1094,6 +1095,22 @@ bool AudioTokenizerDecoder::decode(const int32_t * codes, int32_t n_frames,
     }
 
     return decode_chunked_cuda(codes, n_frames, samples, max_gpu_frames, context_frames_cfg);
+}
+
+void AudioTokenizerDecoder::set_n_threads(int32_t n_threads) {
+    if (n_threads <= 0) {
+        return;
+    }
+    n_threads_ = n_threads;
+    if (state_.backend_cpu) {
+        ggml_backend_cpu_set_n_threads(state_.backend_cpu, n_threads);
+    }
+    if (state_.backend) {
+        ggml_backend_dev_t device = ggml_backend_get_device(state_.backend);
+        if (device && ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+            ggml_backend_cpu_set_n_threads(state_.backend, n_threads);
+        }
+    }
 }
 
 void free_audio_decoder_model(audio_decoder_model & model) {

@@ -166,7 +166,10 @@ public:
 
     // Release all model/runtime resources
     void unload_model();
-    
+
+    // CPU thread count of the decoder's CPU backend(s) (UANF fork; was always GGML's default).
+    void set_n_threads(int32_t n_threads);
+
     // Decode audio codes to waveform
     // codes: audio codes [n_frames, n_codebooks] as int32_t (row-major)
     // n_frames: number of frames
@@ -242,6 +245,7 @@ private:
     audio_decoder_model model_;
     audio_decoder_state state_;
     std::string error_msg_;
+    int32_t n_threads_ = 0;  // requested CPU threads (0 = GGML default), re-applied after load
     
     // Temporary storage for codes input
     std::vector<int32_t> codes_buf_;

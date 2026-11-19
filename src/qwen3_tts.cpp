@@ -517,7 +517,12 @@ tts_result Qwen3TTS::synthesize_internal(const std::string & text,
         }
     };
     sample_memory("synth/start");
-    
+
+    // UANF fork: params.n_threads was never applied (TTSTransformer::set_n_threads had no caller
+    // and the vocoder had none): the CPU backends always ran with GGML's default thread count.
+    transformer_.set_n_threads(params.n_threads);
+    audio_decoder_.set_n_threads(params.n_threads);
+
     // Step 2: Tokenize input text
     int64_t t_tokenize_start = get_time_ms();
     std::vector<int32_t> text_tokens = tokenizer_.encode_for_tts(text);
