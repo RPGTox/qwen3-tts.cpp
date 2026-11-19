@@ -705,7 +705,7 @@ bool TTSTransformer::load_tensor_data(const std::string & path, struct gguf_cont
         
         read_buf.resize(nbytes);
         
-        if (fseek(f, data_offset + offset, SEEK_SET) != 0) {
+        if (qwen3_fseek64(f, static_cast<int64_t>(data_offset + offset), SEEK_SET) != 0) {
             error_msg_ = "Failed to seek to tensor data: " + std::string(name);
             fclose(f);
             release_preferred_backend(backend);

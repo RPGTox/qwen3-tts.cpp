@@ -4,10 +4,22 @@
 #include "ggml-backend.h"
 #include "gguf.h"
 
+#include <cstdio>
+#include <cstdint>
 #include <string>
 #include <map>
 #include <vector>
 #include <memory>
+
+// 64-bit file seek (UANF fork): fseek takes a 32-bit long on Windows, so offsets past
+// 2 GiB fail there (1.7B GGUF files are 2.3-3.7 GB).
+inline int qwen3_fseek64(FILE * f, int64_t offset, int origin) {
+#ifdef _WIN32
+    return _fseeki64(f, offset, origin);
+#else
+    return fseeko(f, static_cast<off_t>(offset), origin);
+#endif
+}
 
 namespace qwen3_tts {
 
