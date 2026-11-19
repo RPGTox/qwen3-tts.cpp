@@ -674,7 +674,7 @@ bool TTSTransformer::load_tensor_data(const std::string & path, struct gguf_cont
         return false;
     }
     
-    FILE * f = fopen(path.c_str(), "rb");
+    FILE * f = ggml_fopen(path.c_str(), "rb");
     if (!f) {
         error_msg_ = "Failed to open file for reading: " + path;
         release_preferred_backend(backend);
@@ -3012,7 +3012,7 @@ bool TTSTransformer::write_attn_dump() {
     if (!attn_dump_ || attn_dump_path_.empty() || attn_rows_.empty()) {
         return true;
     }
-    FILE * f = fopen(attn_dump_path_.c_str(), "wb");
+    FILE * f = ggml_fopen(attn_dump_path_.c_str(), "wb");
     if (!f) {
         fprintf(stderr, "attn-dump: cannot open %s for writing\n", attn_dump_path_.c_str());
         return false;
@@ -3104,7 +3104,7 @@ bool TTSTransformer::generate(const int32_t * text_tokens, int32_t n_tokens,
     // [prefill_len x hidden_size] float32, for parity checks against the Python reference.
     if (const char * dump = std::getenv("QWEN3_TTS_DUMP_PREFILL")) {
         if (dump[0] != '\0') {
-            if (FILE * f = fopen(dump, "wb")) {
+            if (FILE * f = ggml_fopen(dump, "wb")) {
                 fwrite(prefill_embd.data(), sizeof(float), prefill_embd.size(), f);
                 fclose(f);
                 fprintf(stderr, "  [debug] prefill %d x %d written to %s\n", prefill_len, cfg.hidden_size, dump);
@@ -3405,7 +3405,7 @@ bool TTSTransformer::generate(const int32_t * text_tokens, int32_t n_tokens,
     
 #ifdef QWEN3_TTS_DUMP_CODES
     if (const char * dump_path = getenv("QWEN3_TTS_DUMP_CODES")) {
-        FILE * df = fopen(dump_path, "wb");
+        FILE * df = ggml_fopen(dump_path, "wb");
         if (df) {
             int32_t n_out = (int32_t)output.size();
             fwrite(&n_out, sizeof(int32_t), 1, df);
@@ -3695,7 +3695,7 @@ bool TTSTransformer::generate_icl(const int32_t * text_tokens, int32_t n_tokens,
     
 #ifdef QWEN3_TTS_DUMP_CODES
     if (const char * dump_path = getenv("QWEN3_TTS_DUMP_CODES")) {
-        FILE * df = fopen(dump_path, "wb");
+        FILE * df = ggml_fopen(dump_path, "wb");
         if (df) {
             int32_t n_out = (int32_t)output.size();
             fwrite(&n_out, sizeof(int32_t), 1, df);

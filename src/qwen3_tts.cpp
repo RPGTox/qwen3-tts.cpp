@@ -122,7 +122,7 @@ bool Qwen3TTS::load_models(const std::string & model_dir) {
     std::string tts_model_path;
     std::string q8_path = model_dir + "/qwen3-tts-0.6b-q8_0.gguf";
     std::string f16_path = model_dir + "/qwen3-tts-0.6b-f16.gguf";
-    FILE * q8_check = fopen(q8_path.c_str(), "r");
+    FILE * q8_check = ggml_fopen(q8_path.c_str(), "r");
     if (q8_check) {
         fclose(q8_check);
         tts_model_path = q8_path;
@@ -153,7 +153,7 @@ bool Qwen3TTS::load_model_files(const std::string & tts_model_path,
         const std::string model_dir =
             slash == std::string::npos ? std::string(".") : tokenizer_model_path.substr(0, slash);
         std::string f32_tok_path = model_dir + "/qwen3-tts-tokenizer-f32.gguf";
-        FILE * f32_check = fopen(f32_tok_path.c_str(), "r");
+        FILE * f32_check = ggml_fopen(f32_tok_path.c_str(), "r");
         if (f32_check) {
             fclose(f32_check);
             codec_encoder_model_path_ = f32_tok_path;
@@ -772,7 +772,7 @@ void Qwen3TTS::set_progress_callback(tts_progress_callback_t callback) {
 // WAV file loading (16-bit PCM or 32-bit float)
 bool load_audio_file(const std::string & path, std::vector<float> & samples, 
                      int & sample_rate) {
-    FILE * f = fopen(path.c_str(), "rb");
+    FILE * f = ggml_fopen(path.c_str(), "rb");
     if (!f) {
         fprintf(stderr, "ERROR: Cannot open WAV file: %s\n", path.c_str());
         return false;
@@ -914,7 +914,7 @@ bool load_audio_file(const std::string & path, std::vector<float> & samples,
 // WAV file saving (16-bit PCM at specified sample rate)
 bool save_audio_file(const std::string & path, const std::vector<float> & samples,
                      int sample_rate) {
-    FILE * f = fopen(path.c_str(), "wb");
+    FILE * f = ggml_fopen(path.c_str(), "wb");
     if (!f) {
         fprintf(stderr, "ERROR: Cannot create WAV file: %s\n", path.c_str());
         return false;
@@ -1017,7 +1017,7 @@ bool Qwen3TTS::prepare_icl_context(const std::string & reference_audio,
     const std::string & ref_code_path = params.ref_code_path;
     bool loaded_precomputed = false;
     if (!ref_code_path.empty()) {
-        FILE * f = fopen(ref_code_path.c_str(), "r");
+        FILE * f = ggml_fopen(ref_code_path.c_str(), "r");
         if (!f) {
             error_out = "ref-code file not readable: " + ref_code_path;
             return false;

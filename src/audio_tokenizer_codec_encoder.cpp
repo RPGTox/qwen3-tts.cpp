@@ -614,7 +614,7 @@ bool CodecEncoder::encode_host_f32(
     auto dump_act = [&](const char * name) {
         if (!act_dir) return;
         std::string p = std::string(act_dir) + "/" + name;
-        FILE * f = fopen(p.c_str(), "wb");
+        FILE * f = ggml_fopen(p.c_str(), "wb");
         if (f) { fwrite(buf.data(), 4, buf.size(), f); fclose(f); }
     };
 
@@ -998,7 +998,7 @@ bool CodecEncoder::encode_host_f32(
                 std::vector<float> dbuf(n_el);
                 ggml_backend_tensor_get(dt, dbuf.data(), 0, ggml_nbytes(dt));
                 std::string pth = std::string(act_dir) + "/" + dbg_weight_names[di];
-                FILE * df = fopen(pth.c_str(), "wb");
+                FILE * df = ggml_fopen(pth.c_str(), "wb");
                 if (df) { fwrite(dbuf.data(), 4, n_el, df); fclose(df); }
             }
         }
@@ -1011,7 +1011,7 @@ bool CodecEncoder::encode_host_f32(
                 std::vector<float> dbuf(n_el);
                 ggml_backend_tensor_get(dt, dbuf.data(), 0, n_el * sizeof(float));
                 std::string pth = std::string(act_dir) + "/" + dbg_names[di];
-                FILE * df = fopen(pth.c_str(), "wb");
+                FILE * df = ggml_fopen(pth.c_str(), "wb");
                 if (df) { fwrite(dbuf.data(), 4, n_el, df); fclose(df); }
             }
         }
@@ -1031,7 +1031,7 @@ bool CodecEncoder::encode_host_f32(
                 char name[32];
                 snprintf(name, sizeof(name), "cpp_attn_%02zu.f32", li);
                 std::string pth = std::string(act_dir) + "/" + name;
-                FILE * af = fopen(pth.c_str(), "wb");
+                FILE * af = ggml_fopen(pth.c_str(), "wb");
                 if (af) { fwrite(rowmajor.data(), 4, rowmajor.size(), af); fclose(af); }
             }
             for (size_t li = 0; li < tfm_layer_outs.size(); ++li) {
@@ -1047,7 +1047,7 @@ bool CodecEncoder::encode_host_f32(
                 char name[32];
                 snprintf(name, sizeof(name), "cpp_tfm_%02zu.f32", li);
                 std::string p = std::string(act_dir) + "/" + name;
-                FILE * f = fopen(p.c_str(), "wb");
+                FILE * f = ggml_fopen(p.c_str(), "wb");
                 if (f) { fwrite(rowmajor.data(), 4, rowmajor.size(), f); fclose(f); }
             }
         }

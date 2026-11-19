@@ -348,7 +348,7 @@ bool load_tensor_data_from_file(
     }
     
     // Open file for reading tensor data
-    FILE * f = fopen(path.c_str(), "rb");
+    FILE * f = ggml_fopen(path.c_str(), "rb");
     if (!f) {
         error_msg = "Failed to open file for reading: " + path;
         ggml_backend_free(backend);
