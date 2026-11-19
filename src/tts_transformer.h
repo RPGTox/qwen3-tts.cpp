@@ -205,6 +205,11 @@ public:
 
     // Cap intra-op threads on the CPU backend(s); no-op for non-CPU backends.
     // Call after load_model(), before the first forward pass.
+    // Text layout of the next generate() calls (UANF fork): false = streaming (one text row per
+    // frame, upstream default), true = whole text in the prefill (Python non_streaming_mode,
+    // the default of generate_voice_design).
+    void set_non_streaming_text(bool on) { non_streaming_text_ = on; }
+
     void set_n_threads(int32_t n_threads);
 
     // Release all model/runtime resources
@@ -395,6 +400,7 @@ private:
     
     tts_transformer_model model_;
     tts_transformer_state state_;
+    bool non_streaming_text_ = false;
     std::string error_msg_;
     
     // Cached hidden states from last forward pass

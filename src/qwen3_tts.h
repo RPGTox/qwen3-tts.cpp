@@ -42,6 +42,10 @@ struct tts_params {
     // EOS logit bias for ICL generation (combats babble-past-end on 1.7B)
     float eos_bias = 0.0f;
 
+    // Whole target text in the prefill instead of one text row per frame (UANF fork; Python
+    // non_streaming_mode). Voice design sets it by default, as Python's generate_voice_design.
+    bool non_streaming = false;
+
     // Language ID for codec (2050=en, 2069=ru, 2055=zh, 2058=ja, 2064=ko, 2053=de, 2061=fr, 2054=es)
     int32_t language_id = 2050;
 

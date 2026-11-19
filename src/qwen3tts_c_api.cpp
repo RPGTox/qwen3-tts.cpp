@@ -150,6 +150,10 @@ Qwen3TtsAudio * qwen3_tts_design(Qwen3Tts * tts, const char * description,
     if (!tts || !description || !text) return nullptr;
     AUTORELEASE_BEGIN
     auto cpp_params = to_cpp_params(params);
+    // Python's generate_voice_design default: whole text in the prefill.
+    // QWEN3_TTS_DESIGN_STREAMING=1 keeps the streaming layout (A/B comparison).
+    const char * streaming_env = std::getenv("QWEN3_TTS_DESIGN_STREAMING");
+    cpp_params.non_streaming = !(streaming_env && streaming_env[0] == '1');
     auto result = tts->engine.synthesize_voice_design(text, description, cpp_params);
     if (!result.success) {
         tts->last_error = result.error_msg;

@@ -1148,6 +1148,45 @@ bool TTSTransformer::build_prefill_graph(const int32_t * text_tokens, int32_t n_
         instruct_len = n_instruct;
     }
 
+    if (non_streaming_text_) {
+        // Non-streaming text layout (UANF fork; Python non_streaming_mode=True, the default of
+        // generate_voice_design): the whole target text + tts_eos goes in the prefill, each row
+        // overlaid with codec_pad, then one row tts_pad + codec_bos; during generation only
+        // tts_pad is fed (empty trailing text). Python: modeling_qwen3_tts.py generate(),
+        // non_streaming_mode branch.
+        const int32_t text_count = std::max(0, n_tokens - 8);  // tokens[3 .. n-5): the text itself
+        std::vector<float> text_proj;
+        if (text_count > 0 && !project_text_tokens(text_tokens + 3, text_count, text_proj)) {
+            return false;
+        }
+        const float * codec_pad_embed = codec_input_embedding.data() + (size_t)(codec_input_len - 2) * hidden_size;
+        const int32_t text_rows = text_count + 1;  // + tts_eos
+        const int32_t prefill_len = instruct_len + 3 + codec_plus_overlay_len + text_rows + 1;
+        prefill_embd.resize((size_t)prefill_len * hidden_size);
+        float * dst = prefill_embd.data();
+        if (instruct_len > 0) {
+            memcpy(dst, instruct_proj.data(), instruct_proj.size() * sizeof(float));
+        }
+        dst += (size_t)instruct_len * hidden_size;
+        memcpy(dst, role_embed.data(), role_embed.size() * sizeof(float));
+        dst += (size_t)3 * hidden_size;
+        memcpy(dst, codec_plus_overlay.data(), codec_plus_overlay.size() * sizeof(float));
+        dst += codec_plus_overlay.size();
+        for (int32_t i = 0; i < text_rows; ++i) {
+            const float * text_row = (i < text_count) ? text_proj.data() + (size_t)i * hidden_size
+                                                      : tts_eos_embed.data();
+            for (int32_t h = 0; h < hidden_size; ++h) {
+                dst[h] = text_row[h] + codec_pad_embed[h];
+            }
+            dst += hidden_size;
+        }
+        for (int32_t h = 0; h < hidden_size; ++h) {
+            dst[h] = tts_pad_embed[h] + codec_bos_embed[h];
+        }
+        trailing_text_hidden.clear();  // generation feeds tts_pad only
+        return true;
+    }
+
     const int32_t prefill_len = instruct_len + 3 + codec_plus_overlay_len + 1;
     prefill_embd.resize((size_t)prefill_len * hidden_size);
     if (instruct_len > 0) {
@@ -3060,6 +3099,18 @@ bool TTSTransformer::generate(const int32_t * text_tokens, int32_t n_tokens,
 
     const int32_t prefill_len = (int32_t)(prefill_embd.size() / cfg.hidden_size);
     const int32_t trailing_len = (int32_t)(trailing_text_hidden.size() / cfg.hidden_size);
+
+    // Debug (UANF fork): QWEN3_TTS_DUMP_PREFILL=<file> writes the prefill embedding
+    // [prefill_len x hidden_size] float32, for parity checks against the Python reference.
+    if (const char * dump = std::getenv("QWEN3_TTS_DUMP_PREFILL")) {
+        if (dump[0] != '\0') {
+            if (FILE * f = fopen(dump, "wb")) {
+                fwrite(prefill_embd.data(), sizeof(float), prefill_embd.size(), f);
+                fclose(f);
+                fprintf(stderr, "  [debug] prefill %d x %d written to %s\n", prefill_len, cfg.hidden_size, dump);
+            }
+        }
+    }
 
     const int32_t required_ctx = prefill_len + max_len + 8;
     if (state_.cache.n_ctx < required_ctx || state_.cache.n_ctx > std::max<int32_t>(required_ctx * 2, 512)) {

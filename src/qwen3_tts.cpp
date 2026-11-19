@@ -522,6 +522,11 @@ tts_result Qwen3TTS::synthesize_internal(const std::string & text,
     // and the vocoder had none): the CPU backends always ran with GGML's default thread count.
     transformer_.set_n_threads(params.n_threads);
     audio_decoder_.set_n_threads(params.n_threads);
+    transformer_.set_non_streaming_text(params.non_streaming);
+    struct reset_layout {  // back to the default layout on every return path
+        TTSTransformer & t;
+        ~reset_layout() { t.set_non_streaming_text(false); }
+    } reset_layout_guard{transformer_};
 
     // Step 2: Tokenize input text
     int64_t t_tokenize_start = get_time_ms();
