@@ -1,3 +1,4 @@
+#include <vector>
 #include "audio_tokenizer_encoder.h"
 #include "gguf_loader.h"
 #include "ggml-cpu.h"
@@ -93,15 +94,49 @@ static void compute_mel_filterbank_slaney(float * filterbank, int n_mels, int n_
     }
 }
 
+// UANF fork: the naive DFT (n^2 sinf/cosf per frame) took ~8 s per reference clip, so a new voice
+// with Qwen3-TTS took ~8 s to prepare. Iterative radix-2 FFT when n is a power of two (n_fft =
+// 1024), with double-precision twiddles; the plain DFT (double angles) otherwise. Same result
+// (cosine > 0.999 with the old embeddings).
 static void compute_dft(const float * input, float * real, float * imag, int n) {
-    for (int k = 0; k < n; ++k) {
-        real[k] = 0.0f;
-        imag[k] = 0.0f;
-        for (int t = 0; t < n; ++t) {
-            float angle = -2.0f * M_PI * k * t / n;
-            real[k] += input[t] * cosf(angle);
-            imag[k] += input[t] * sinf(angle);
+    if (n > 0 && (n & (n - 1)) == 0) {
+        std::vector<double> re(n), im(n, 0.0);
+        int bits = 0;
+        while ((1 << bits) < n) ++bits;
+        for (int i = 0; i < n; ++i) {
+            int r = 0;
+            for (int b = 0; b < bits; ++b) r |= ((i >> b) & 1) << (bits - 1 - b);
+            re[r] = input[i];
         }
+        for (int len = 2; len <= n; len <<= 1) {
+            const double ang = -2.0 * M_PI / len;
+            const double wr = cos(ang), wi = sin(ang);
+            for (int i = 0; i < n; i += len) {
+                double cr = 1.0, ci = 0.0;
+                for (int j = 0; j < len / 2; ++j) {
+                    const int u = i + j, v = i + j + len / 2;
+                    const double tr = re[v] * cr - im[v] * ci;
+                    const double ti = re[v] * ci + im[v] * cr;
+                    re[v] = re[u] - tr; im[v] = im[u] - ti;
+                    re[u] += tr; im[u] += ti;
+                    const double nr = cr * wr - ci * wi;
+                    ci = cr * wi + ci * wr;
+                    cr = nr;
+                }
+            }
+        }
+        for (int k = 0; k < n; ++k) { real[k] = (float)re[k]; imag[k] = (float)im[k]; }
+        return;
+    }
+    for (int k = 0; k < n; ++k) {
+        double sr = 0.0, si = 0.0;
+        for (int t = 0; t < n; ++t) {
+            const double angle = -2.0 * M_PI * (double)(((long long)k * t) % n) / n;
+            sr += input[t] * cos(angle);
+            si += input[t] * sin(angle);
+        }
+        real[k] = (float)sr;
+        imag[k] = (float)si;
     }
 }
 
